@@ -1,0 +1,99 @@
+name: Bygg MASUGN för macOS och Windows
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write # behövs för att skapa releaser
+
+jobs:
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Konfigurera
+        run: >
+          cmake -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+
+      - name: Bygg
+        run: cmake --build build --config Release -j 3
+
+      - name: Paketera
+        run: |
+          ART=build/Masugn_artefacts/Release
+          mkdir -p dist/MASUGN
+          cp -R "$ART/VST3/MASUGN.vst3" dist/MASUGN/
+          cp -R "$ART/AU/MASUGN.component" dist/MASUGN/
+          cp -R "$ART/Standalone/MASUGN.app" dist/MASUGN/
+          cp scripts/installera.command dist/MASUGN/
+          chmod +x dist/MASUGN/installera.command
+          for b in dist/MASUGN/MASUGN.vst3 dist/MASUGN/MASUGN.component dist/MASUGN/MASUGN.app; do
+            codesign --force --deep --sign - "$b"
+          done
+          cd dist && ditto -c -k --keepParent MASUGN MASUGN-macOS.zip
+
+      - name: Ladda upp
+        uses: actions/upload-artifact@v4
+        with:
+          name: MASUGN-macOS
+          path: dist/MASUGN-macOS.zip
+
+
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Konfigurera
+        run: cmake -B build -G "Visual Studio 17 2022" -A x64
+
+      - name: Bygg
+        run: cmake --build build --config Release --parallel 4
+
+      - name: Paketera
+        shell: pwsh
+        run: |
+          $ART = "build/Masugn_artefacts/Release"
+          New-Item -ItemType Directory -Force dist/MASUGN | Out-Null
+          Copy-Item -Recurse "$ART/VST3/MASUGN.vst3" dist/MASUGN/
+          Copy-Item "$ART/Standalone/MASUGN.exe" dist/MASUGN/
+          Copy-Item scripts/installera.bat dist/MASUGN/
+          Compress-Archive -Path dist/MASUGN -DestinationPath dist/MASUGN-Windows.zip
+
+      - name: Ladda upp
+        uses: actions/upload-artifact@v4
+        with:
+          name: MASUGN-Windows
+          path: dist/MASUGN-Windows.zip
+
+  # Varje bygge på main blir en release, så att
+  # .../releases/latest/download/MASUGN-macOS.zip alltid ger senaste versionen.
+  release:
+    if: github.event_name == 'push'
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Skapa release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('bygge-{0}', github.run_number) }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('MASUGN bygge {0}', github.run_number) }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          body: "Ladda ner MASUGN-macOS.zip nedan. Installera enligt README."
+          files: |
+            dist/MASUGN-macOS.zip
+            dist/MASUGN-Windows.zip
