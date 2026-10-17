@@ -12,11 +12,11 @@ using namespace masugn;
 
 struct Result { float rmsDb = -100, peak = 0, maxReduction = 0, tailDb = -100; bool bad = false; };
 
-static Result renderPreset (int index, juce::AudioBuffer<float>* keep, float extraDb = 0.0f)
+static Result renderPreset (int index, juce::AudioBuffer<float>* keep, float extraDb = 0.0f, bool soundB = false)
 {
     const double sr = 48000.0, bpm = 128.0;
     const int block = 256;
-    auto values = presetValues (index);
+    auto values = soundB ? presetValuesB (index) : presetValues (index);
     values[Vol] += extraDb;
     const auto p = toParams (values, bpm);
 
@@ -118,6 +118,27 @@ int main (int argc, char** argv)
     const auto& list = factoryPresets();
     const float target = -16.0f;
     int problems = 0;
+    if (! paramTableComplete()) { std::cout << "Parametertabellen saknar rader!\n"; return 1; }
+
+    // --bench: åtta toner samtidigt i värsta ljudet, hur stor del av realtid går åt?
+    if (mode == "--bench")
+    {
+        for (int i = 0; i < (int) list.size(); ++i)
+        {
+            Engine e;
+            e.prepare (48000.0, 256);
+            const auto p = toParams (presetValuesB (i), 128.0);
+            juce::AudioBuffer<float> buf (2, 256);
+            juce::MidiBuffer on;
+            for (int n = 0; n < 8; ++n) on.addEvent (juce::MidiMessage::noteOn (1, 48 + n * 3, 0.8f), 0);
+            const auto t0 = juce::Time::getMillisecondCounterHiRes();
+            const int blocks = 48000 * 4 / 256;
+            for (int b = 0; b < blocks; ++b) { e.process (buf, b == 0 ? on : juce::MidiBuffer(), p, nullptr); }
+            const double ms = juce::Time::getMillisecondCounterHiRes() - t0;
+            std::cout << list[(size_t) i].name.paddedRight (' ', 20) << juce::String (ms / 40.0, 1) << " % av realtid\n";
+        }
+        return 0;
+    }
 
     for (int i = 0; i < (int) list.size(); ++i)
     {
@@ -125,14 +146,20 @@ int main (int argc, char** argv)
         const auto r = renderPreset (i, mode == "--wav" ? &audio : nullptr);
         const float trim = juce::jlimit (-18.0f, 18.0f, target - (r.rmsDb - presetValues (i)[Vol] + (presetTrims().size() > (size_t) i ? presetTrims()[(size_t) i] : 0.0f) + 0.0f));
         const bool silent = r.rmsDb < -60.0f;
-        const bool stuck = r.tailDb > -50.0f && list[(size_t) i].group != "YTA" && list[(size_t) i].group != "DJUP";
-        if (r.bad || silent) ++problems;
+        const bool longTail = list[(size_t) i].group == "YTA" || list[(size_t) i].group == "MOLN" || list[(size_t) i].group == juce::String::fromUTF8 ("DRÖN");
+        const bool stuck = r.tailDb > -50.0f && ! longTail;
+        // B-ljudet (SMÄLT helt uppvriden) ska också fungera och inte vara mycket starkare
+        const auto rb = mode == "--trims" ? Result() : renderPreset (i, nullptr, 0.0f, true);
+        const bool badB = mode != "--trims" && (rb.bad || rb.rmsDb < -60.0f);
+        if (r.bad || silent || badB) ++problems;
 
         if (mode == "--trims")
         {
             // ny volym = nuvarande + skillnaden mot målet, men sänk tills SÄKERHETSVENTILEN knappt jobbar
             const float current = presetTrims().size() > (size_t) i ? presetTrims()[(size_t) i] : 0.0f;
-            float extra = target - r.rmsDb;
+            // B (SMÄLT uppvriden) får vara högst 2 dB starkare än målet
+            const auto rbT = renderPreset (i, nullptr, 0.0f, true);
+            float extra = juce::jmin (target - r.rmsDb, target + 2.0f - rbT.rmsDb);
             for (int guard = 0; guard < 30; ++guard)
             {
                 const auto t = renderPreset (i, nullptr, extra);
@@ -148,7 +175,8 @@ int main (int argc, char** argv)
                   << "  topp " << juce::String (r.peak, 2)
                   << "  ventil " << juce::String (r.maxReduction, 2)
                   << "  svans " << juce::String (r.tailDb, 0).paddedLeft (' ', 5)
-                  << (r.bad ? "  OGILTIGT" : "") << (silent ? "  TYST" : "") << (stuck ? "  hänger?" : "") << "\n";
+                  << "  | B rms " << juce::String (rb.rmsDb, 1).paddedLeft (' ', 6) << " ventil " << juce::String (rb.maxReduction, 2)
+                  << (r.bad ? "  OGILTIGT" : "") << (silent ? "  TYST" : "") << (stuck ? "  hänger?" : "") << (badB ? "  B-FEL" : "") << "\n";
         juce::ignoreUnused (trim);
 
         if (mode == "--wav" && argc > 2)

@@ -25,8 +25,12 @@ public:
 private:
     struct State
     {
-        int type = -1, table = -1; float pos = -1.0f, form = -1.0f, level = -1.0f;
-        bool operator!= (const State& o) const { return type != o.type || table != o.table || pos != o.pos || form != o.form || level != o.level; }
+        int type = -1, table = -1, mut = -1; float pos = -1.0f, form = -1.0f, level = -1.0f, mamt = -1.0f;
+        bool operator!= (const State& o) const
+        {
+            return type != o.type || table != o.table || mut != o.mut || ! juce::exactlyEqual (pos, o.pos) || ! juce::exactlyEqual (form, o.form)
+                || ! juce::exactlyEqual (level, o.level) || ! juce::exactlyEqual (mamt, o.mamt);
+        }
     };
     State state() const;
 
@@ -35,7 +39,8 @@ private:
     State last;
 };
 
-// MASUGN: panelen. Till vänster GJUTFORMARNA där ljuden förvaras, till höger rattarna, längst ned ett tangentbord.
+// MASUGN: panelen. Till vänster GJUTFORMARNA där ljuden förvaras, i mitten SMÄLT, runt om rattarna,
+// längst ned ett tangentbord.
 class MasugnEditor : public juce::AudioProcessorEditor,
                      private juce::Timer,
                      private juce::ListBoxModel
@@ -82,15 +87,15 @@ private:
     // OSC: tre flikar som delar samma rattar
     std::array<juce::TextButton, 3> oscTabs;
     int selOsc = 0, shownType = -1;
-    juce::ComboBox typeBox, tableBox;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> typeAtt, tableAtt;
-    enum { KPos, KForm, KLevel, KOct, KSemi, KFine, NumOscKnobs };
+    juce::ComboBox typeBox, tableBox, mutBox;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> typeAtt, tableAtt, mutAtt;
+    enum { KPos, KForm, KMut, KLevel, KOct, KSemi, KFine, NumOscKnobs };
     std::array<Knob, NumOscKnobs> oscKnobs;
     WaveDisplay display;
 
     // övriga rattar och väljare
     std::array<std::unique_ptr<Knob>, masugn::NumParams> knobs;
-    juce::ComboBox f1Box, f2Box, routeBox, modeBox, ekoDivBox;
+    juce::ComboBox f1Box, f2Box, routeBox, modeBox;
     std::array<juce::ComboBox, 2> lfoWaveBox, lfoDivBox;
     std::array<juce::TextButton, 2> syncBtn;
     std::array<juce::ComboBox, masugn::kModSlots> srcBox, dstBox;
@@ -99,12 +104,16 @@ private:
 
     DiceButton diceOsc, diceFilter, diceEnv, diceMod, diceFx;
 
+    // SMÄLT
+    juce::TextButton copyBBtn, swapBtn, diceBBtn;
+
     juce::MidiKeyboardComponent keyboard;
     juce::TooltipWindow tooltips { this, 700 };   // visar förklaringen när musen vilar på något
     AboutOverlay about { "MASUGN", juce::String::fromUTF8 ("Vågtabeller, partiklar, resonatorer och FM") };
 
-    juce::Rectangle<int> topR, vaultR, oscR, filtR, fxR, envR, lfoR, modR, spelR, meterR;
-    int lastPreset = -2, lastDice = -1;
+    juce::Rectangle<int> topR, vaultR, oscR, smaltR, filtR, fxR, envR, lfoR, modR, meterR;
+    int lastPreset = -2, lastDice = -1, lastB = -1;
+    float lastSmalt = -1.0f;
     float shownLevel = 0.0f, shownValve = 0.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MasugnEditor)

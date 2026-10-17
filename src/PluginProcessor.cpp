@@ -65,21 +65,16 @@ juce::Array<int> panelParams (int what)
     auto range = [&r] (int a, int b) { for (int k = a; k <= b; ++k) r.add (k); };
     switch (what)
     {
-        case MasugnProcessor::DiceOsc:    range (O1Type, Spread); break;
-        case MasugnProcessor::DiceFilter: range (F1Type, FDrive); break;
+        case MasugnProcessor::DiceOsc:    range (O1Type, Binaural); break;
+        case MasugnProcessor::DiceFilter: range (F1Type, Heat); break;
         case MasugnProcessor::DiceEnv:    range (FA, MR); break;
         case MasugnProcessor::DiceMod:    range (L1Wave, M4Amt); break;
-        case MasugnProcessor::DiceFx:     range (Drive, RumMix); break;
+        case MasugnProcessor::DiceFx:     range (Drive, Width); break;
         default:                          range (0, NumParams - 1); break;
     }
     return r;
 }
 
-bool isLogParam (int k)
-{
-    return k == Cut1 || k == Cut2 || k == FA || k == FD || k == FR || k == AA || k == AD || k == AR
-        || k == MA || k == MD || k == MR || k == L1Rate || k == L2Rate || k == Glide;
-}
 } // namespace
 
 //==============================================================================
@@ -89,7 +84,9 @@ MasugnProcessor::MasugnProcessor()
 {
     for (int k = 0; k < NumParams; ++k)
         raw[(size_t) k] = apvts.getRawParameterValue (idOf (k));
+    jassert (paramTableComplete());
     diceRng.setSeedRandomly();
+    soundB = audioB = defaultValues();
     loadPreset (0);
     undoStack.clear();
 }
@@ -128,7 +125,13 @@ void MasugnProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     keyboardState.processNextMidiBuffer (midi, 0, n, true);
     if (panicPending.exchange (false)) engine.panic();
 
-    auto p = toParams (readValues(), bpm);
+    // SMÄLT: blanda panelens ljud (A) med B
+    const auto a = readValues();
+    {
+        const juce::SpinLock::ScopedTryLockType lock (bLock);
+        if (lock.isLocked()) audioB = soundB;
+    }
+    auto p = toParams (meltValues (a, audioB, a[Smalt]), bpm);
     p.modWheel = modWheel;
     p.bend = bend;
 
@@ -162,6 +165,7 @@ void MasugnProcessor::loadPreset (int index)
     juce::Array<int> all;
     for (int k = 0; k < NumParams; ++k) all.add (k);
     setValues (presetValues (index), all);
+    setB (presetValuesB (index));
     currentPreset.store (index);
     apvts.state.setProperty ("group", list[(size_t) index].group, nullptr);
     panicPending.store (true);   // tystas i ljudtråden, inte här
@@ -195,7 +199,7 @@ void MasugnProcessor::dice (int what)
     for (int k : panelParams (what))
     {
         const auto& d = paramDefs()[(size_t) k];
-        if (k == Vol) continue;
+        if (k == Vol || k == Smalt) continue;
         if (d.kind != Kind::Float)
         {
             out[(size_t) k] = diceRng.nextBool() ? va[(size_t) k] : vb[(size_t) k];
@@ -218,10 +222,10 @@ void MasugnProcessor::dice (int what)
     }
 
     // säkerhetsgränser: det ska gå att lyssna på
+    out[Heat]   = juce::jmin (out[Heat], 0.7f);
     out[Reso1]  = juce::jmin (out[Reso1], 0.85f);
     out[Reso2]  = juce::jmin (out[Reso2], 0.85f);
-    out[EkoFb]  = juce::jmin (out[EkoFb], 0.6f);
-    out[EkoMix] = juce::jmin (out[EkoMix], 0.45f);
+    out[Shimmer] = juce::jmin (out[Shimmer], 0.8f);
     out[RumMix] = juce::jmin (out[RumMix], 0.55f);
     out[Drive]  = juce::jmin (out[Drive], 0.6f);
     for (int m = 0; m < kModSlots; ++m)
@@ -236,6 +240,22 @@ void MasugnProcessor::dice (int what)
     juce::Array<int> all;
     for (int k = 0; k < NumParams; ++k) all.add (k);
     setValues (out, all);
+    if (what == DiceAll)
+    {
+        // B blandas likadant, ur de två ljudens B
+        const auto ba = presetValuesB (a), bb = presetValuesB (b);
+        auto nb = out;
+        for (int k = 0; k < NumParams; ++k)
+        {
+            const auto& d = paramDefs()[(size_t) k];
+            if (k == Vol || k == Smalt) continue;
+            if (d.kind != Kind::Float) nb[(size_t) k] = t < 0.5f ? ba[(size_t) k] : bb[(size_t) k];
+            else if (isLogParam (k) && ba[(size_t) k] > 0.0f && bb[(size_t) k] > 0.0f)
+                nb[(size_t) k] = std::exp (std::log (ba[(size_t) k]) + (std::log (bb[(size_t) k]) - std::log (ba[(size_t) k])) * t);
+            else nb[(size_t) k] = ba[(size_t) k] + (bb[(size_t) k] - ba[(size_t) k]) * t;
+        }
+        setB (nb);
+    }
     currentPreset.store (-1);
     apvts.state.setProperty ("group", group, nullptr);
     diceCount.fetch_add (1);
@@ -260,10 +280,95 @@ bool MasugnProcessor::undo()
 }
 
 //==============================================================================
+std::array<float, NumParams> MasugnProcessor::getB() const
+{
+    const juce::SpinLock::ScopedLockType lock (bLock);
+    return soundB;
+}
+
+void MasugnProcessor::setB (const std::array<float, NumParams>& v)
+{
+    {
+        const juce::SpinLock::ScopedLockType lock (bLock);
+        soundB = v;
+    }
+    bChanged.fetch_add (1);
+}
+
+void MasugnProcessor::copyAtoB()
+{
+    pushUndo();
+    setB (readValues());
+}
+
+void MasugnProcessor::swapAB()
+{
+    pushUndo();
+    const auto a = readValues();
+    auto b = getB();
+    b[Vol] = a[Vol];        // volym och SMÄLT stannar på panelen
+    b[Smalt] = a[Smalt];
+    juce::Array<int> all;
+    for (int k = 0; k < NumParams; ++k) all.add (k);
+    setValues (b, all);
+    setB (a);
+    currentPreset.store (-1);
+    diceCount.fetch_add (1);
+}
+
+void MasugnProcessor::diceB()
+{
+    // nytt B: A, men med tabellposition, filter, mutation, binaural och effekter knuffade åt något håll
+    pushUndo();
+    const auto a = readValues();
+    auto b = a;
+    auto nudge = [&] (int k, float amount)
+    {
+        const auto& d = paramDefs()[(size_t) k];
+        const float span = d.max - d.min;
+        b[(size_t) k] = juce::jlimit (d.min, d.max, a[(size_t) k] + span * amount * (diceRng.nextFloat() * 2.0f - 1.0f));
+    };
+    for (int o = 0; o < 3; ++o)
+    {
+        nudge (oscP (o, O1Pos), 0.6f);
+        nudge (oscP (o, O1Form), 0.3f);
+        nudge (oscP (o, O1MAmt), 0.5f);
+    }
+    for (int k : { Binaural, Reso1, Reso2, FEnv, Heat, Chorus, Shimmer, RumMix, Width }) nudge (k, 0.35f);
+    for (int k : { Cut1, Cut2 })
+        b[(size_t) k] = juce::jlimit (60.0f, 16000.0f, a[(size_t) k] * std::exp2 ((diceRng.nextFloat() * 2.0f - 1.0f) * 2.0f));
+    b[Reso1] = juce::jmin (b[Reso1], 0.85f);
+    b[Reso2] = juce::jmin (b[Reso2], 0.85f);
+    b[Heat] = juce::jmin (b[Heat], 0.7f);
+    b[RumMix] = juce::jmin (b[RumMix], 0.55f);
+    setB (b);
+}
+
+void MasugnProcessor::storeB (juce::ValueTree& state) const
+{
+    juce::ValueTree t ("SOUND_B");
+    const auto b = getB();
+    for (int k = 0; k < NumParams; ++k) t.setProperty (juce::Identifier (idOf (k)), b[(size_t) k], nullptr);
+    state.removeChild (state.getChildWithName ("SOUND_B"), nullptr);
+    state.appendChild (t, nullptr);
+}
+
+void MasugnProcessor::restoreB (const juce::ValueTree& state)
+{
+    const auto t = state.getChildWithName ("SOUND_B");
+    auto b = readValues();      // saknas något i B används panelens värde
+    if (t.isValid())
+        for (int k = 0; k < NumParams; ++k)
+            if (t.hasProperty (juce::Identifier (idOf (k)))) b[(size_t) k] = (float) t.getProperty (juce::Identifier (idOf (k)));
+    setB (b);
+}
+
+//==============================================================================
 void MasugnProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     auto state = apvts.copyState();
     state.setProperty ("preset", currentPreset.load(), nullptr);
+    storeB (state);
     if (auto xml = state.createXml()) copyXmlToBinary (*xml, destData);
 }
 
@@ -275,6 +380,7 @@ void MasugnProcessor::setStateInformation (const void* data, int sizeInBytes)
             auto state = juce::ValueTree::fromXml (*xml);
             currentPreset.store ((int) state.getProperty ("preset", -1));
             apvts.replaceState (state);
+            restoreB (state);
         }
 }
 

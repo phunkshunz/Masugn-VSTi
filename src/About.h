@@ -62,7 +62,8 @@ public:
         add ("MASKINHALLEN", true);
         add (" har namn efter något man hittar på ett bygge eller i en maskinhall. ");
         add ("MASUGN", true);
-        add (" är ugnen där metallen smälts om: vågtabeller, partiklar, resonatorer och FM som glöder och flyter ihop.\n\n");
+        add (" är ugnen där metallen smälts om. Varje ton glöder i två halvor, vänster och höger, "
+             "och SMÄLT-ratten flyter från ett ljud till ett annat.\n\n");
         add ("Phunkshunz AUDIO", true);
         add (" är en ordlek på function: maskiner som gör en sak, och gör den hårt.");
         juce::TextLayout layout;

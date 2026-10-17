@@ -53,6 +53,13 @@ public:
 
     juce::String currentGroup() const;
 
+    // SMÄLT: ljud B. Ratten SMÄLT glider från panelens ljud (A) till B.
+    void copyAtoB();          // B blir som A
+    void swapAB();            // byt plats på A och B
+    void diceB();             // slumpa ett nytt B nära A
+    std::array<float, masugn::NumParams> getB() const;
+    std::atomic<int> bChanged { 0 };
+
     std::atomic<float> level { 0.0f }, valveReduction { 0.0f };
 
     static juce::String idOf (int p) { return masugn::paramDefs()[(size_t) p].id; }
@@ -61,6 +68,9 @@ private:
     std::array<float, masugn::NumParams> readValues() const;
     void setValues (const std::array<float, masugn::NumParams>& v, const juce::Array<int>& only);
     void pushUndo();
+    void setB (const std::array<float, masugn::NumParams>& v);
+    void storeB (juce::ValueTree& state) const;
+    void restoreB (const juce::ValueTree& state);
 
     masugn::Engine engine;
     std::array<std::atomic<float>*, masugn::NumParams> raw {};
@@ -69,6 +79,11 @@ private:
     double sr = 44100.0;
     std::deque<juce::MemoryBlock> undoStack;
     juce::Random diceRng;
+
+    // ljud B: skrivs från panelen, läses i ljudtråden (låset hålls bara en kort kopiering)
+    std::array<float, masugn::NumParams> soundB {};
+    mutable juce::SpinLock bLock;
+    std::array<float, masugn::NumParams> audioB {};   // ljudtrådens kopia
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MasugnProcessor)
 };

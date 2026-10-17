@@ -46,6 +46,7 @@ WaveDisplay::State WaveDisplay::state() const
     s.type = (int) std::round (get (O1Type));
     s.table = (int) std::round (get (O1Table));
     s.pos = get (O1Pos); s.form = get (O1Form); s.level = get (O1Level);
+    s.mut = (int) std::round (get (O1Mut)); s.mamt = get (O1MAmt);
     return s;
 }
 
@@ -90,9 +91,33 @@ void WaveDisplay::paint (juce::Graphics& g)
             const int f = juce::jlimit (0, kFrames - 1, (int) std::round ((float) k / (float) (shown - 1) * (float) (kFrames - 1)));
             const float* data = bank.frame (s.table, 3, f);
             auto a = base.translated (dx * (float) k, -dy * (float) k);
-            g.setColour (k == cur ? hot : line2.withAlpha (0.9f));
-            g.strokePath (wavePath (a, [data] (float t) { return data[juce::jlimit (0, kTableSize - 1, (int) (t * (float) kTableSize))] * 0.9f; }),
-                          juce::PathStrokeType (k == cur ? 1.8f : 1.0f));
+            auto read = [data] (float t) { t -= std::floor (t); return data[juce::jlimit (0, kTableSize - 1, (int) (t * (float) kTableSize))]; };
+            if (k != cur)
+            {
+                g.setColour (line2.withAlpha (0.9f));
+                g.strokePath (wavePath (a, [read] (float t) { return read (t) * 0.9f; }), juce::PathStrokeType (1.0f));
+                continue;
+            }
+            // den valda vågen ritas med MUTATORN, så man ser vad den gör
+            const int mut = s.type == TypeWave && s.mamt > 0.001f ? s.mut : MutOff;
+            const float amt = s.mamt;
+            auto mutated = [=] (float t) -> float
+            {
+                const float tp = juce::MathConstants<float>::twoPi;
+                switch (mut)
+                {
+                    case MutFm:    return read (t + amt * 0.32f * std::sin (tp * t));
+                    case MutSync:  return read (t * (1.0f + amt * 6.0f));
+                    case MutFold:  return fold (read (t), amt);
+                    case MutPhase: return 0.7f * (read (t) - read (t + 0.5f - 0.45f * amt));
+                    case MutSuper: return 0.5f * (read (t) + read (t * 1.0f + amt * 0.08f));
+                    default:       return read (t);
+                }
+            };
+            g.setColour (hot.withAlpha (0.25f));
+            g.strokePath (wavePath (a, [mutated] (float t) { return mutated (t) * 0.9f; }), juce::PathStrokeType (4.5f));
+            g.setColour (hot);
+            g.strokePath (wavePath (a, [mutated] (float t) { return mutated (t) * 0.9f; }), juce::PathStrokeType (1.8f));
         }
         if (s.type == TypeParticle)
         {
@@ -146,6 +171,9 @@ void WaveDisplay::paint (juce::Graphics& g)
     g.setFont (juce::FontOptions (10.0f));
     juce::String label = "OSC " + juce::String (osc + 1) + juce::String::fromUTF8 ("  ·  ") + typeName (s.type);
     if (s.type == TypeWave || s.type == TypeParticle) label += juce::String::fromUTF8 ("  ·  ") + juce::String::fromUTF8 (tableNames()[juce::jlimit (0, kNumTables - 1, s.table)]);
+    static const char* mutNames[] = { "", "FM", "Synk", "Veck", "Super", "Fasdiff" };
+    if (s.mamt > 0.001f && s.mut > 0 && (s.type == TypeWave || (s.type == TypeAnalog && s.mut == MutFold)))
+        label += juce::String::fromUTF8 ("  ·  ") + mutNames[juce::jlimit (0, 5, s.mut)];
     if (dim) label += juce::String::fromUTF8 ("  ·  av (NIVÅ 0)");
     g.drawText (label, getLocalBounds().reduced (8, 3).removeFromTop (12), juce::Justification::centredLeft, true);
 }
@@ -212,10 +240,20 @@ MasugnEditor::MasugnEditor (MasugnProcessor& p)
     knobs[(size_t) Cut1]->setLabel ("CUTOFF 1");
     knobs[(size_t) L1Rate]->setLabel ("FART");
     knobs[(size_t) L2Rate]->setLabel ("FART");
-    for (int k : { FA, FD, FS, FR, Cut2, Reso2, FKey }) knobs[(size_t) k]->setAccent (cold);
+    for (int k : { FA, FD, FS, FR, Cut2, Reso2, FKey, Heat, Binaural }) knobs[(size_t) k]->setAccent (cold);
     for (int k : { MA, MD, MS, MR, Noise, Spread }) knobs[(size_t) k]->setAccent (concrete);
     for (int k : { L1Rate, L2Rate }) knobs[(size_t) k]->setAccent (cold);
-    for (int k : { Drive, Chorus, EkoMix, EkoFb, EkoTone, RumMix, RumSize }) knobs[(size_t) k]->setAccent (concrete);
+    for (int k : { Drive, Chorus, Shimmer, RumMix, RumSize, Width }) knobs[(size_t) k]->setAccent (concrete);
+    knobs[(size_t) Heat]->slider.setTooltip (juce::String::fromUTF8 ("HETTA: ljudet matas tillbaka in i filtret. Tjockt, varmt och smutsigt."));
+    knobs[(size_t) Binaural]->slider.setTooltip (juce::String::fromUTF8 ("BINAURAL: varje ton får en egen vänster- och högerhalva som svävar isär. Gör ljudet stort och levande."));
+    knobs[(size_t) Shimmer]->slider.setTooltip (juce::String::fromUTF8 ("SHIMMER: rumsklangen växer en oktav uppåt, som glöd."));
+    knobs[(size_t) Width]->slider.setTooltip (juce::String::fromUTF8 ("BREDD: gör hela ljudet bredare i stereo"));
+    // SMÄLT: den stora ratten
+    knobs[(size_t) Smalt]->setLabel ({});
+    knobs[(size_t) Smalt]->setAccent (cold);
+    knobs[(size_t) Smalt]->slider.setTooltip (juce::String::fromUTF8 ("SMÄLT: glid från ljudet på panelen (A) till ljud B"));
+    knobs[(size_t) Glide]->setAccent (concrete);
+    knobs[(size_t) Vol]->setAccent (concrete);
     for (int m = 0; m < kModSlots; ++m)
     {
         auto& kn = *knobs[(size_t) modP (m, M1Amt)];
@@ -235,14 +273,18 @@ MasugnEditor::MasugnEditor (MasugnProcessor& p)
     typeBox.addItemList ({ juce::String::fromUTF8 ("Vågtabell"), "Partikel", "Resonator", juce::String::fromUTF8 ("Kärna (FM)"), "Analog" }, 1);
     for (int t = 0; t < kNumTables; ++t) tableBox.addItem (juce::String::fromUTF8 (tableNames()[t]), t + 1);
     tableBox.setTooltip (juce::String::fromUTF8 ("Vilken vågtabell oscillatorn läser ur (Vågtabell och Partikel)"));
+    mutBox.addItemList ({ juce::String::fromUTF8 ("Ingen mutator"), "FM", "Synk", "Veck", "Super", "Fasdiff" }, 1);
+    mutBox.setTooltip (juce::String::fromUTF8 ("MUTATOR förvränger vågen. FM: skarp och metallisk. Synk: skrikig synk. Veck: vikt våg. "
+                                               "Super: sju vågor isär stämda. Fasdiff: pulsbredd av vilken våg som helst. MUTATION-ratten är hur mycket."));
     addAndMakeVisible (typeBox);
     addAndMakeVisible (tableBox);
+    addAndMakeVisible (mutBox);
     for (auto& k : oscKnobs) addAndMakeVisible (k);
     oscKnobs[KLevel].setAccent (sodium);
     addAndMakeVisible (display);
 
     addBox (f1Box, F1Type); addBox (f2Box, F2Type); addBox (routeBox, FRoute);
-    addBox (modeBox, Mode); addBox (ekoDivBox, EkoDiv);
+    addBox (modeBox, Mode);
     for (int l = 0; l < 2; ++l)
     {
         addBox (lfoWaveBox[(size_t) l], lfoP (l, L1Wave));
@@ -265,6 +307,18 @@ MasugnEditor::MasugnEditor (MasugnProcessor& p)
     f2Box.setTooltip (juce::String::fromUTF8 ("Filter 2"));
     routeBox.setTooltip (juce::String::fromUTF8 ("Serie: filter 1 och sedan filter 2. Parallell: båda samtidigt, blandade."));
     modeBox.setTooltip (juce::String::fromUTF8 ("Poly: ackord. Mono: en ton i taget. Bunden: överlappande toner glider utan ny attack."));
+
+    // SMÄLT-knappar
+    copyBBtn.setButtonText (juce::String::fromUTF8 ("A → B"));
+    swapBtn.setButtonText (juce::String::fromUTF8 ("BYT A/B"));
+    diceBBtn.setButtonText (juce::String::fromUTF8 ("SLUMPA B"));
+    copyBBtn.setTooltip (juce::String::fromUTF8 ("Kopiera ljudet på panelen till B. Ändra sedan panelen och smält mellan dem."));
+    swapBtn.setTooltip (juce::String::fromUTF8 ("Byt plats: B hamnar på panelen så att du kan skruva på det"));
+    diceBBtn.setTooltip (juce::String::fromUTF8 ("Gör ett nytt B nära ljudet på panelen"));
+    copyBBtn.onClick = [this] { proc.copyAtoB(); };
+    swapBtn.onClick = [this] { proc.swapAB(); };
+    diceBBtn.onClick = [this] { proc.diceB(); };
+    for (auto* b : { &copyBBtn, &swapBtn, &diceBBtn }) addAndMakeVisible (b);
 
     auto diceTo = [this] (DiceButton& d, int what, juce::Colour c) { d.setColour (c); d.onClick = [this, what] { proc.dice (what); }; addAndMakeVisible (d); };
     diceTo (diceOsc, MasugnProcessor::DiceOsc, sodium);
@@ -315,11 +369,12 @@ void MasugnEditor::selectOsc (int o)
 {
     selOsc = o;
     for (int i = 0; i < 3; ++i) oscTabs[(size_t) i].setToggleState (i == o, juce::dontSendNotification);
-    typeAtt.reset(); tableAtt.reset();
+    typeAtt.reset(); tableAtt.reset(); mutAtt.reset();
     typeAtt = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (proc.apvts, MasugnProcessor::idOf (oscP (o, O1Type)), typeBox);
     tableAtt = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (proc.apvts, MasugnProcessor::idOf (oscP (o, O1Table)), tableBox);
-    const P ids[NumOscKnobs] = { O1Pos, O1Form, O1Level, O1Oct, O1Semi, O1Fine };
-    const char* names[NumOscKnobs] = { "POSITION", "FORM", "NIVÅ", "OKTAV", "TON", "FIN" };
+    mutAtt = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (proc.apvts, MasugnProcessor::idOf (oscP (o, O1Mut)), mutBox);
+    const P ids[NumOscKnobs] = { O1Pos, O1Form, O1MAmt, O1Level, O1Oct, O1Semi, O1Fine };
+    const char* names[NumOscKnobs] = { "POSITION", "FORM", "MUTATION", "NIVÅ", "OKTAV", "TON", "FIN" };
     for (int k = 0; k < NumOscKnobs; ++k)
         oscKnobs[(size_t) k].attach (proc.apvts, MasugnProcessor::idOf (oscP (o, ids[k])), juce::String::fromUTF8 (names[k]));
     shownType = -1;
@@ -337,6 +392,8 @@ void MasugnEditor::updateOscLabels()
     oscKnobs[KPos].setLabel (names.first);
     oscKnobs[KForm].setLabel (names.second);
     tableBox.setEnabled (t == TypeWave || t == TypeParticle);
+    mutBox.setEnabled (t == TypeWave || t == TypeAnalog);
+    oscKnobs[KMut].setEnabled (t == TypeWave || t == TypeAnalog);
     typeBox.setTooltip (typeTip (t));
 }
 
@@ -421,35 +478,56 @@ void MasugnEditor::paint (juce::Graphics& g)
     using namespace MasugnColours;
     g.fillAll (ground);
 
-    // logga
-    g.setColour (sodium);
-    g.setFont (juce::FontOptions (44.0f, juce::Font::bold).withHorizontalScale (0.85f));
-    g.drawText ("MASUGN", logoArea.withTrimmedBottom (14), juce::Justification::centredLeft);
+    // glöd underifrån, som från en ugnslucka
+    {
+        juce::ColourGradient heatGlow (cold.withAlpha (0.10f), (float) kW * 0.5f, (float) kH, ground.withAlpha (0.0f), (float) kW * 0.5f, (float) kH * 0.45f, true);
+        g.setGradientFill (heatGlow);
+        g.fillRect (getLocalBounds());
+    }
+
+    // logga: glödande, gul överst och röd nedtill
+    {
+        auto r = logoArea.withTrimmedBottom (14).toFloat();
+        g.setGradientFill (juce::ColourGradient (sodium.brighter (0.3f), r.getX(), r.getY(), cold, r.getX(), r.getBottom(), false));
+        g.setFont (juce::FontOptions (44.0f, juce::Font::bold).withHorizontalScale (0.85f));
+        g.drawText ("MASUGN", logoArea.withTrimmedBottom (14), juce::Justification::centredLeft);
+    }
     g.setColour (muted);
     g.setFont (juce::FontOptions (9.0f));
     g.drawText (juce::String::fromUTF8 ("MASKINHALLEN · PHUNKSHUNZ AUDIO"), logoArea.withTrimmedTop (logoArea.getHeight() - 14), juce::Justification::centredLeft);
 
-    // status till höger
-    {
-        auto r = topR.withTrimmedLeft (topR.getWidth() - 260);
-        g.setColour (muted);
-        g.setFont (juce::FontOptions (10.5f));
-        const int cur = proc.currentPreset.load();
-        const auto& l = factoryPresets();
-        const auto line1 = cur >= 0 ? l[(size_t) cur].group + juce::String::fromUTF8 (" · ") + juce::String (cur + 1) + " / " + juce::String ((int) l.size())
-                                    : juce::String::fromUTF8 ("Slumpat ljud · ") + proc.currentGroup();
-        g.drawText (line1, r.removeFromTop (r.getHeight() / 2), juce::Justification::bottomRight);
-        g.drawText (juce::String::fromUTF8 ("Spela med MIDI eller tangenterna nedan"), r, juce::Justification::topRight);
-    }
-
     drawPanel (g, vaultR, "GJUTFORMAR", juce::String ((int) factoryPresets().size()) + " ljud");
     drawPanel (g, oscR, "OSC");
+    drawPanel (g, smaltR, juce::String::fromUTF8 ("SMÄLT"), juce::String::fromUTF8 ("ljud A → ljud B"));
     drawPanel (g, filtR, "FILTER");
     drawPanel (g, fxR, "EFFEKT");
-    drawPanel (g, envR, "KUVERT", juce::String::fromUTF8 ("cyan filter · orange volym · grå 3"));
+    drawPanel (g, envR, "KUVERT", juce::String::fromUTF8 ("röd filter · gul volym · grå 3"));
     drawPanel (g, lfoR, "LFO");
     drawPanel (g, modR, "MOD", juce::String::fromUTF8 ("källa → mål"));
-    drawPanel (g, spelR, "SPEL");
+
+    // SMÄLT: glödande ram och A / B vid ratten
+    {
+        // glöd bakom ratten, starkare ju mer man smälter
+        const float m = proc.apvts.getRawParameterValue (MasugnProcessor::idOf (Smalt))->load();
+        const auto kc = knobs[(size_t) Smalt]->getBounds().toFloat().withTrimmedBottom (13.0f).getCentre();
+        juce::ColourGradient glow (cold.withAlpha (0.10f + 0.40f * m), kc.x, kc.y, cold.withAlpha (0.0f), kc.x + 95.0f, kc.y, true);
+        glow.addColour (0.35, sodium.withAlpha (0.06f + 0.22f * m));
+        g.setGradientFill (glow);
+        g.fillEllipse (juce::Rectangle<float> (176.0f, 176.0f).withCentre (kc));
+
+        g.setColour (cold.withAlpha (0.55f));
+        g.drawRoundedRectangle (smaltR.toFloat().reduced (0.5f), 6.0f, 1.2f);
+        const auto kb = knobs[(size_t) Smalt]->getBounds();
+        g.setFont (juce::FontOptions (16.0f, juce::Font::bold));
+        g.setColour (sodium);
+        g.drawText ("A", kb.getX() - 4, kb.getBottom() - 34, 20, 20, juce::Justification::centred);
+        g.setColour (cold);
+        g.drawText ("B", kb.getRight() - 16, kb.getBottom() - 34, 20, 20, juce::Justification::centred);
+        g.setColour (muted);
+        g.setFont (juce::FontOptions (10.0f));
+        g.drawFittedText (juce::String::fromUTF8 ("Vrid för att smälta ljudet på panelen mot B. Tryck A → B och skruva vidare."),
+                          smaltR.getX() + 12, smaltR.getBottom() - 40, smaltR.getWidth() - 24, 32, juce::Justification::centredLeft, 3);
+    }
 
     // gruppens beskrivning
     g.setColour (muted);
@@ -464,24 +542,18 @@ void MasugnEditor::paint (juce::Graphics& g)
     for (int m = 0; m < kModSlots; ++m)
         g.drawText (juce::String (m + 1), modR.getX() + 4, modR.getY() + 40 + m * 53, 8, 20, juce::Justification::centred);
 
-    // nivå och SÄKERHETSVENTIL
+    // NIVÅ: blir röd när SÄKERHETSVENTILEN tar i
     {
         auto r = meterR;
-        auto bar = [&] (juce::Rectangle<int> row, const juce::String& name, float v, juce::Colour c)
-        {
-            g.setColour (muted);
-            g.setFont (juce::FontOptions (9.5f));
-            g.drawText (name, row.removeFromTop (12), juce::Justification::centredLeft);
-            auto b = row.removeFromTop (8).toFloat();
-            g.setColour (line);
-            g.fillRoundedRectangle (b, 3.0f);
-            g.setColour (c);
-            g.fillRoundedRectangle (b.withWidth (b.getWidth() * juce::jlimit (0.0f, 1.0f, v)), 3.0f);
-        };
+        g.setColour (muted);
+        g.setFont (juce::FontOptions (9.0f));
+        g.drawText (juce::String::fromUTF8 (shownValve > 0.02f ? "NIVÅ · VENTIL" : "NIVÅ"), r.removeFromTop (11), juce::Justification::centredLeft);
+        auto b = r.removeFromTop (7).toFloat();
+        g.setColour (line);
+        g.fillRoundedRectangle (b, 3.0f);
         const float levelDb = juce::Decibels::gainToDecibels (shownLevel, -60.0f);
-        bar (r.removeFromTop (24), juce::String::fromUTF8 ("NIVÅ"), (levelDb + 60.0f) / 60.0f, cold);
-        r.removeFromTop (4);
-        bar (r.removeFromTop (24), juce::String::fromUTF8 ("SÄKERHETSVENTIL"), shownValve * 2.0f, sodium);
+        g.setColour (shownValve > 0.02f ? cold : sodium);
+        g.fillRoundedRectangle (b.withWidth (b.getWidth() * juce::jlimit (0.0f, 1.0f, (levelDb + 60.0f) / 60.0f)), 3.0f);
     }
 }
 
@@ -510,6 +582,12 @@ void MasugnEditor::resized()
     bigDice.setBounds (748, 14, 44, 44);
     undoBtn.setBounds (804, 20, 80, 32);
 
+    // uppe till höger: spelsätt, nivå, glid och volym
+    modeBox.setBounds (904, 12, 104, 24);
+    meterR = { 904, 42, 104, 20 };
+    knobs[(size_t) Glide]->setBounds (1020, 4, 78, 62);
+    knobs[(size_t) Vol]->setBounds (1100, 4, 78, 62);
+
     vaultR = { 16, 72, 260, 562 };
     {
         auto g = vaultR.reduced (12).withTrimmedTop (24);
@@ -519,13 +597,13 @@ void MasugnEditor::resized()
     }
 
     const int x0 = 288, right = kW - 16;
-    oscR  = { x0, 72, 440, 300 };
-    filtR = { oscR.getRight() + 12, 72, 240, 300 };
-    fxR   = { filtR.getRight() + 12, 72, right - (filtR.getRight() + 12), 300 };
-    envR  = { x0, 384, 290, 250 };
-    lfoR  = { envR.getRight() + 12, 384, 170, 250 };
-    modR  = { lfoR.getRight() + 12, 384, 236, 250 };
-    spelR = { modR.getRight() + 12, 384, right - (modR.getRight() + 12), 250 };
+    oscR   = { x0, 72, 420, 300 };
+    smaltR = { oscR.getRight() + 12, 72, 200, 300 };
+    filtR  = { smaltR.getRight() + 12, 72, right - (smaltR.getRight() + 12), 300 };
+    envR   = { x0, 384, 290, 250 };
+    lfoR   = { envR.getRight() + 12, 384, 170, 250 };
+    modR   = { lfoR.getRight() + 12, 384, 236, 250 };
+    fxR    = { modR.getRight() + 12, 384, right - (modR.getRight() + 12), 250 };
 
     auto diceAt = [] (DiceButton& d, juce::Rectangle<int> panel, int x) { d.setBounds (panel.getX() + x, panel.getY() + 7, 20, 20); };
     diceAt (diceOsc, oscR, 46); diceAt (diceFilter, filtR, 64); diceAt (diceFx, fxR, 70); diceAt (diceEnv, envR, 80);
@@ -535,34 +613,43 @@ void MasugnEditor::resized()
     for (int o = 0; o < 3; ++o)
         oscTabs[(size_t) o].setBounds (oscR.getRight() - 12 - (3 - o) * 62 + 4, oscR.getY() + 6, 58, 22);
     {
-        const int half = (oscR.getWidth() - 24) / 2;
-        typeBox.setBounds (oscR.getX() + 12, oscR.getY() + 34, half - 4, 26);
-        tableBox.setBounds (oscR.getX() + 12 + half + 4, oscR.getY() + 34, half - 4, 26);
-        display.setBounds (oscR.getX() + 12, oscR.getY() + 66, oscR.getWidth() - 24, 68);
-        auto area = juce::Rectangle<int> (oscR.getX() + 12, oscR.getY() + 138, oscR.getWidth() - 24, 160);
-        const int cw = area.getWidth() / 4, ch = 80;
-        const int order[NumOscKnobs] = { KPos, KForm, KLevel, KOct, KSemi, KFine };
-        const int slot[NumOscKnobs] = { 0, 1, 2, 4, 5, 6 };
-        for (int i = 0; i < NumOscKnobs; ++i)
-            oscKnobs[(size_t) order[i]].setBounds (area.getX() + (slot[i] % 4) * cw, area.getY() + (slot[i] / 4) * ch, cw, ch);
-        knobs[(size_t) Noise]->setBounds (area.getX() + 3 * cw, area.getY(), cw, ch);
-        knobs[(size_t) Spread]->setBounds (area.getX() + 3 * cw, area.getY() + ch, cw, ch);
+        const int third = (oscR.getWidth() - 24) / 3;
+        typeBox.setBounds (oscR.getX() + 12, oscR.getY() + 34, third - 4, 26);
+        tableBox.setBounds (oscR.getX() + 12 + third + 2, oscR.getY() + 34, third - 4, 26);
+        mutBox.setBounds (oscR.getX() + 12 + 2 * third + 4, oscR.getY() + 34, third - 4, 26);
+        display.setBounds (oscR.getX() + 12, oscR.getY() + 66, oscR.getWidth() - 24, 66);
+        auto area = juce::Rectangle<int> (oscR.getX() + 12, oscR.getY() + 136, oscR.getWidth() - 24, 160);
+        const int cw = area.getWidth() / 5, ch = 80;
+        auto cell = [&] (int slot) { return juce::Rectangle<int> (area.getX() + (slot % 5) * cw, area.getY() + (slot / 5) * ch, cw, ch); };
+        oscKnobs[KPos].setBounds (cell (0));
+        oscKnobs[KForm].setBounds (cell (1));
+        oscKnobs[KMut].setBounds (cell (2));
+        oscKnobs[KLevel].setBounds (cell (3));
+        knobs[(size_t) Noise]->setBounds (cell (4));
+        oscKnobs[KOct].setBounds (cell (5));
+        oscKnobs[KSemi].setBounds (cell (6));
+        oscKnobs[KFine].setBounds (cell (7));
+        knobs[(size_t) Spread]->setBounds (cell (8));
+        knobs[(size_t) Binaural]->setBounds (cell (9));
     }
+
+    // SMÄLT
+    knobs[(size_t) Smalt]->setBounds (smaltR.getX() + 22, smaltR.getY() + 30, smaltR.getWidth() - 44, 150);
+    copyBBtn.setBounds (smaltR.getX() + 12, smaltR.getY() + 188, (smaltR.getWidth() - 30) / 2, 26);
+    swapBtn.setBounds (smaltR.getX() + 18 + (smaltR.getWidth() - 30) / 2, smaltR.getY() + 188, (smaltR.getWidth() - 30) / 2, 26);
+    diceBBtn.setBounds (smaltR.getX() + 12, smaltR.getY() + 220, smaltR.getWidth() - 24, 26);
 
     // FILTER
     {
         const int half = (filtR.getWidth() - 24) / 2;
+        routeBox.setBounds (filtR.getRight() - 12 - 100, filtR.getY() + 6, 100, 22);
         f1Box.setBounds (filtR.getX() + 12, filtR.getY() + 34, half - 3, 26);
         f2Box.setBounds (filtR.getX() + 12 + half + 3, filtR.getY() + 34, half - 3, 26);
-        auto area = filtR.reduced (12, 0).withTrimmedTop (66);
-        layoutKnobs (area, { Cut1, Reso1, FEnv, Cut2, Reso2, FKey, FDrive }, 3, 76);
-        const int cw = area.getWidth() / 3;
-        routeBox.setBounds (area.getX() + cw + 6, area.getY() + 2 * 76 + 22, 2 * cw - 6, 26);
+        layoutKnobs (filtR.reduced (12, 0).withTrimmedTop (66), { Cut1, Reso1, FEnv, Cut2, Reso2, FKey, FDrive, Heat }, 3, 76);
     }
 
     // EFFEKT
-    ekoDivBox.setBounds (fxR.getX() + 12, fxR.getY() + 34, fxR.getWidth() - 24, 26);
-    layoutKnobs (fxR.reduced (12, 0).withTrimmedTop (66), { Drive, Chorus, EkoMix, EkoFb, EkoTone, RumMix, RumSize }, 3, 76);
+    layoutKnobs (fxR.reduced (10, 0).withTrimmedTop (32), { Drive, Chorus, Shimmer, RumMix, RumSize, Width }, 2, 72);
 
     // KUVERT
     layoutKnobs (envR.reduced (12, 0).withTrimmedTop (32), { FA, FD, FS, FR, AA, AD, AS, AR, MA, MD, MS, MR }, 4, 72);
@@ -586,11 +673,6 @@ void MasugnEditor::resized()
         dstBox[(size_t) m].setBounds (modR.getX() + 98, ry + 8, 92, 24);
         knobs[(size_t) modP (m, M1Amt)]->setBounds (modR.getX() + 192, ry, 40, 50);
     }
-
-    // SPEL
-    modeBox.setBounds (spelR.getX() + 12, spelR.getY() + 34, spelR.getWidth() - 24, 26);
-    layoutKnobs (spelR.reduced (12, 0).withTrimmedTop (66), { Glide, Vol }, 2, 92);
-    meterR = { spelR.getX() + 14, spelR.getY() + 170, spelR.getWidth() - 28, 60 };
 
     keyboard.setBounds (16, 646, kW - 32, kH - 654);
     keyboard.setKeyWidth ((float) (kW - 32 - 30) / 36.0f);  // fem oktaver syns
@@ -643,6 +725,14 @@ void MasugnEditor::timerCallback()
     }
     updateOscLabels();
     display.refresh();
+    {
+        const float m = proc.apvts.getRawParameterValue (MasugnProcessor::idOf (Smalt))->load();
+        if (proc.bChanged.load() != lastB || std::abs (m - lastSmalt) > 0.004f)
+        {
+            lastB = proc.bChanged.load(); lastSmalt = m;
+            repaint (smaltR);
+        }
+    }
     undoBtn.setEnabled (proc.canUndo());
 
     const float lv = proc.level.load(), vr = proc.valveReduction.load();

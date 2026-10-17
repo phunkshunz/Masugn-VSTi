@@ -372,4 +372,101 @@ private:
     int pos = 0;
     float phase = 0.0f;
 };
+
+//==============================================================================
+// SHIMMER-RUM: rumsklang där en del av svansen skickas tillbaka en oktav upp.
+// Ljudet växer uppåt som glöd ur en ugn. Taket på återkopplingen gör att det aldrig skenar.
+class ShimmerVerb
+{
+public:
+    void prepare (double sampleRate, int maxBlock)
+    {
+        sr = sampleRate;
+        reverb.setSampleRate (sr);
+        reverb.reset();
+        const size_t size = (size_t) juce::jmax (16, maxBlock) + 16;
+        wetL.assign (size, 0.0f); wetR.assign (size, 0.0f);
+        fbL.assign (size, 0.0f); fbR.assign (size, 0.0f);
+        for (auto& p : shift) p.prepare (sr);
+        for (auto& f : lp) { f.setCutoff (5500.0f, sr); f.z = 0.0f; }
+        for (auto& f : hp) { f.setCutoff (250.0f, sr); f.z = 0.0f; }
+    }
+
+    void reset()
+    {
+        reverb.reset();
+        std::fill (fbL.begin(), fbL.end(), 0.0f); std::fill (fbR.begin(), fbR.end(), 0.0f);
+        for (auto& p : shift) p.clear();
+    }
+
+    // mix 0..1, size 0..1, shimmer 0..1
+    void process (float* L, float* R, int n, float mix, float size, float shimmer) noexcept
+    {
+        n = juce::jmin (n, (int) wetL.size());
+        juce::Reverb::Parameters rp;
+        rp.roomSize = 0.45f + 0.53f * size;
+        rp.damping = 0.35f;
+        rp.wetLevel = 1.0f;
+        rp.dryLevel = 0.0f;
+        rp.width = 1.0f;
+        reverb.setParameters (rp);
+
+        const float shim = juce::jlimit (0.0f, 1.0f, shimmer) * 0.55f;
+        for (int i = 0; i < n; ++i)
+        {
+            wetL[(size_t) i] = 0.5f * L[i] + shim * fbL[(size_t) i];
+            wetR[(size_t) i] = 0.5f * R[i] + shim * fbR[(size_t) i];
+        }
+        reverb.processStereo (wetL.data(), wetR.data(), n);
+        for (int i = 0; i < n; ++i)
+        {
+            // en oktav upp, filtrerat, tillbaka in i nästa block
+            fbL[(size_t) i] = fastTanh (lp[0].lp (hp[0].hp (shift[0].process (wetL[(size_t) i]))));
+            fbR[(size_t) i] = fastTanh (lp[1].lp (hp[1].hp (shift[1].process (wetR[(size_t) i]))));
+            L[i] += wetL[(size_t) i] * mix * 0.8f;
+            R[i] += wetR[(size_t) i] * mix * 0.8f;
+        }
+        for (size_t i = (size_t) n; i < fbL.size(); ++i) { fbL[i] = 0.0f; fbR[i] = 0.0f; }
+    }
+
+private:
+    // Enkel tonhöjdsflytt en oktav upp: två läshuvuden som glider genom en fördröjning och tonas i kors.
+    struct OctaveUp
+    {
+        void prepare (double rate) { buf.assign (4096, 0.0f); win = juce::jmin (2048.0f, (float) rate * 0.05f); clear(); }
+        void clear() { std::fill (buf.begin(), buf.end(), 0.0f); pos = 0; phase = 0.0f; }
+        float process (float x) noexcept
+        {
+            const int size = (int) buf.size();
+            buf[(size_t) pos] = x;
+            phase += 1.0f / win;               // fördröjningen krymper ett sampel per sampel = dubbel hastighet
+            if (phase >= 1.0f) phase -= 1.0f;
+            float out = 0.0f;
+            for (int tap = 0; tap < 2; ++tap)
+            {
+                float ph = phase + 0.5f * (float) tap;
+                if (ph >= 1.0f) ph -= 1.0f;
+                const float d = (1.0f - ph) * win + 2.0f;
+                float rp = (float) pos - d;
+                while (rp < 0.0f) rp += (float) size;
+                const int i0 = (int) rp, i1 = (i0 + 1) % size;
+                const float fr = rp - (float) i0;
+                const float v = buf[(size_t) i0] + fr * (buf[(size_t) i1] - buf[(size_t) i0]);
+                const float w = std::sin (ph * juce::MathConstants<float>::pi);
+                out += v * w * w;
+            }
+            if (++pos >= size) pos = 0;
+            return out;
+        }
+        std::vector<float> buf;
+        int pos = 0;
+        float phase = 0.0f, win = 2048.0f;
+    };
+
+    double sr = 44100.0;
+    juce::Reverb reverb;
+    std::vector<float> wetL, wetR, fbL, fbR;
+    OctaveUp shift[2];
+    OnePole lp[2], hp[2];
+};
 } // namespace masugn

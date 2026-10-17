@@ -3,21 +3,22 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_audio_processors/juce_audio_processors.h>
 
-// Utseende: samma färger som BETONG, ARMERING och VALV — fuktig betong, natriumorange och kall cyan.
+// Utseende: smält metall. Svart sot, glödande gult, het röd glöd och kallt stål.
+// (Namnen sodium/cold/concrete finns kvar så att koden delas med syskonen, men färgerna är MASUGN:s egna.)
 namespace MasugnColours
 {
-const juce::Colour ground   { 0xff121314 };
-const juce::Colour panel    { 0xff1a1c1e };
-const juce::Colour raised   { 0xff232527 };
-const juce::Colour line     { 0xff2c2f32 };
-const juce::Colour line2    { 0xff34383b };
-const juce::Colour text     { 0xffd9d6cf };
-const juce::Colour muted    { 0xff8b8e91 };
-const juce::Colour sodium   { 0xffff8a1f };
-const juce::Colour sodiumDk { 0xffc96a16 };
-const juce::Colour cold     { 0xff4fd1e0 };
-const juce::Colour coldDk   { 0xff2ea7b5 };
-const juce::Colour concrete { 0xffb9b6ae };
+const juce::Colour ground   { 0xff100d0c };
+const juce::Colour panel    { 0xff1a1514 };
+const juce::Colour raised   { 0xff251e1c };
+const juce::Colour line     { 0xff302725 };
+const juce::Colour line2    { 0xff3e3330 };
+const juce::Colour text     { 0xfff1e6da };
+const juce::Colour muted    { 0xff9b8a80 };
+const juce::Colour sodium   { 0xffffc24a };   // glöd: smält metall
+const juce::Colour sodiumDk { 0xffd8901f };
+const juce::Colour cold     { 0xffff5533 };   // het: röd glöd
+const juce::Colour coldDk   { 0xffc63c22 };
+const juce::Colour concrete { 0xff9db0c0 };   // stål
 
 inline juce::Colour lane (int i)
 {
@@ -82,6 +83,12 @@ public:
         juce::Path val;
         val.addCentredArc (arcR.getCentreX(), arcR.getCentreY(), arcR.getWidth() * 0.5f, arcR.getHeight() * 0.5f, 0,
                            juce::jmin (from, angle), juce::jmax (from, angle), true);
+        if (s.isEnabled())
+        {
+            // glöd runt värdet, som het metall
+            g.setColour (accent.withAlpha (0.16f));
+            g.strokePath (val, juce::PathStrokeType (thick * 2.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        }
         g.setColour (s.isEnabled() ? accent : muted);
         g.strokePath (val, juce::PathStrokeType (thick, juce::PathStrokeType::curved, juce::PathStrokeType::butt));
 

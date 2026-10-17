@@ -1,8 +1,8 @@
 # MASUGN
 
-Vågtabells-synth som VST3 och AU för macOS, och VST3 för Windows. Phunkshunz AUDIO, serien **MASKINHALLEN**. Syskon till BETONG, ARMERING, FUKT, KOLV, SMUTS, VALV och SMIDET.
+Bred, glödande poly-synth som VST3 och AU för macOS, och VST3 för Windows. Phunkshunz AUDIO, serien **MASKINHALLEN**. Syskon till BETONG, ARMERING, FUKT, KOLV, SMUTS, VALV och SMIDET.
 
-Masugnen är där metallen smälts om. Här smälts ljud: vågtabeller som glider, partiklar som sprakar, resonatorer som ringer och FM som glöder. Inspirerad av stora digitala vågtabells-synthar, men allt är byggt från grunden: egna tabeller, egen motor.
+VALV är basmaskinen. MASUGN är ugnen: supervågor, rave-stabs, hoovers, mattor som andas, granulära moln och klockor. Allt är byggt från grunden: egna vågtabeller, egen motor.
 
 Klicka på loggan uppe till vänster för att läsa om båtvarvet Docklands.
 
@@ -28,28 +28,44 @@ Starta om Bitwig, eller tryck **Rescan** under Settings › Locations › Plug-i
 
 Högerklicka på zip-filen och välj **Extrahera alla**. Dubbelklicka sedan på **installera.bat** i mappen och svara Ja.
 
+## Det som gör MASUGN speciell
+
+- **SMÄLT:** den stora ratten i mitten. Den glider från ljudet på panelen (A) till ljud B. Alla 48 ljud har ett eget B. Perfekt att automatisera i Bitwig.
+- **BINAURAL:** varje ton har två halvor, en för vänster och en för höger öra, som svävar isär. Ljudet blir stort och levande direkt.
+- **MUTATOR:** varje oscillator kan förvränga vågen med FM, Synk, Veck, Super eller Fasdiff.
+- **HETTA:** ljudet matas tillbaka in i filtret. Tjockt, varmt och smutsigt.
+- **SHIMMER:** rumsklang som växer en oktav uppåt, som glöd ur en ugn.
+
 ## Så funkar den
 
 **Spela:** med MIDI från Bitwig eller ett keyboard, eller klicka på tangenterna längst ned. C3 = mitten-C, som i Bitwig.
 
-**GJUTFORMAR** (till vänster): 55 ljud i sex grupper. Klicka på en grupp, klicka på ett ljud. Du kan också bläddra med ◀ ▶ uppe i mitten. Ljuden syns också i Bitwigs preset-lista. Alla är volymjusterade så att de låter ungefär lika starkt.
+Vila musen på en ratt eller väljare så visas en förklaring.
+
+**GJUTFORMAR** (till vänster): 48 ljud i sex grupper. Klicka på en grupp, klicka på ett ljud. Du kan också bläddra med ◀ ▶ uppe i mitten. Ljuden syns också i Bitwigs preset-lista. Alla är volymjusterade så att de låter ungefär lika starkt.
 
 | Grupp | Stil |
 |---|---|
-| BAS | tunga basar ur tabeller och FM |
-| LEAD | leads, svep och signaler |
-| KLANG | klockor, plock, stabs och klaviatur |
-| YTA | mattor, moln och långa ytor |
-| RÖRELSE | tabeller som rör sig i takt |
-| DJUP | udda, mörka och tunga ljud |
+| RAVE | supervågor, stabs och hoovers |
+| YTA | breda mattor som andas |
+| MOLN | granulära moln och partiklar |
+| KLANG | klockor, plock och glas |
+| DRÖN | långa, glödande drönare |
+| LEAD | leads som skär och sjunger |
 
-Vila musen på en ratt eller väljare så visas en förklaring.
+**Uppe till höger:** SPELSÄTT (Poly, Mono, Bunden), NIVÅ-mätaren (blir röd när säkerhetsventilen tar i), GLID och VOLYM.
+
+### SMÄLT
+- **Ratten:** 0 % = ljud A (det du ser på panelen). 100 % = ljud B.
+- **A → B:** kopierar panelens ljud till B. Skruva sedan på panelen och smält mellan det gamla och det nya.
+- **BYT A/B:** B hamnar på panelen så att du kan skruva på det.
+- **SLUMPA B:** gör ett nytt B nära ljudet på panelen.
 
 ### TÄRNINGAR
-- **Stora tärningen** uppe i mitten: blandar två ljud ur samma grupp till ett nytt.
-- **Vid varje panelrubrik** (OSC, FILTER, EFFEKT, KUVERT och MOD): slumpar bara den panelen.
-- Tärningarna har gränser: resonans, eko och rum kan aldrig gå så långt att det skriker eller skenar.
-- **ÅNGRA:** backar senaste slaget eller ljudbytet, upp till 30 steg.
+- **Stora tärningen** uppe i mitten: blandar två ljud ur samma grupp till ett nytt (B blandas också).
+- **Vid varje panelrubrik** (OSC, FILTER, KUVERT, MOD och EFFEKT): slumpar bara den panelen.
+- Tärningarna har gränser: resonans, hetta och rum kan aldrig gå så långt att det skriker eller skenar.
+- **ÅNGRA:** backar senaste slaget, bytet eller ljudet, upp till 30 steg.
 
 ### OSC
 Tre oscillatorer. Byt mellan dem med flikarna **OSC 1, OSC 2, OSC 3**. En prick ● betyder att den hörs.
@@ -66,34 +82,39 @@ Varje oscillator har en **TYP**:
 
 **TABELL:** 12 egna vågtabeller: Grund, Puls, Synk, Veck, Vokal, Trappa, Glas, Spektrum, Metall, Orgel, Kvint och CZ Reso.
 
-**NIVÅ, OKTAV, TON och FIN** finns för varje oscillator. **BRUS** och **BREDD** (stereo) gäller alla tre.
+**MUTATOR** (Vågtabell, och Veck även på Analog) och **MUTATION** (hur mycket):
 
-Skärmen visar tabellen. Den orange vågen är där POSITION står.
+| Mutator | Låter |
+|---|---|
+| FM | skarp och metallisk |
+| Synk | skrikig synk, svep den med kuvert 3 |
+| Veck | vikt våg, varm och tjock |
+| Super | sju vågor isär stämda, som en supersåg |
+| Fasdiff | pulsbredd av vilken våg som helst |
+
+**NIVÅ, OKTAV, TON och FIN** finns för varje oscillator. **BRUS**, **SPRIDNING** (ackord i stereo) och **BINAURAL** gäller alla tre.
+
+Skärmen visar tabellen. Den gula vågen är där POSITION står, med mutatorn på.
 
 ### FILTER
 - Två filter: **Ladder 24** (fet och rund), **LP 12**, **Band**, **HP**, **Notch**, **Kam** (metalliska, stämda toner) eller **Av**.
-- **KOPPLING:** Serie = filter 1 och sedan filter 2. Parallell = båda samtidigt.
-- **ENV-MOD** (filterkuvertet), **TANGENT** (filtret följer tonhöjden) och **DRIV IN**.
+- **Serie / Parallell** uppe till höger: filter 1 och sedan 2, eller båda samtidigt.
+- **ENV-MOD**, **TANGENT**, **DRIV IN** och **HETTA**.
 
 ### KUVERT
-Tre rader: cyan styr filtret, orange styr volymen, grå är **kuvert 3** som du kan koppla vart du vill i MOD.
+Tre rader: röd styr filtret, gul styr volymen, grå är **kuvert 3** som du kopplar vart du vill i MOD.
 
 ### LFO
-Två LFO:er. Form: sinus, triangel, såg, fyrkant, slump eller mjuk slump. **TAKT** på = följer Bitwigs tempo.
+Två LFO:er. Form: sinus, triangel, såg, fyrkant, slump eller mjuk slump. **TAKT** på = följer Bitwigs tempo. Med BINAURAL går LFO:n lite olika i vänster och höger öra.
 
 ### MOD
-Fyra kopplingar. Välj **KÄLLA** (LFO, kuvert, anslag, modhjul, slump, tangent, aftertouch) och **MÅL** (position, form, nivå, ton, cutoff, resonans, brus, volym, panorering). Ratten till höger är hur mycket. Vänster om mitten = åt andra hållet.
+Fyra kopplingar. Välj **KÄLLA** (LFO, kuvert, anslag, modhjul, slump, tangent, aftertouch) och **MÅL** (position, form, mutation, nivå, ton, cutoff, resonans, brus, volym, panorering). Ratten till höger är hur mycket. Vänster om mitten = åt andra hållet.
 
-Tips: **LFO 1 → OSC 1 pos** får tabellen att röra sig. **Kuvert 3 → OSC 1 pos** gör att varje ton sveper genom tabellen.
-
-### SPEL
-- **Poly:** ackord, åtta röster. **Mono:** en ton i taget. **Bunden:** överlappande toner glider utan ny attack.
-- **GLID** och **VOLYM**.
-- **NIVÅ** och **SÄKERHETSVENTIL:** ventilen gör att MASUGN aldrig kan skära sönder öronen.
+Tips: **LFO 1 → OSC 1 pos** får tabellen att röra sig. **Kuvert 3 → OSC 1 mutation** med Synk ger klassiska synksvep.
 
 ### EFFEKT
-**DRIV**, **KÖR** (bredare och mjukare), **EKO** i takt med tak så att det aldrig skenar, och **RUM**.
+**DRIV**, **KÖR**, **SHIMMER**, **RUM** med **STORLEK**, och **BREDD**.
 
 ## För utvecklare
 
-`tools/MasugnTest.cpp` spelar alla ljud genom motorn, letar efter fel och mäter volymen. Volymerna i `src/Presets.h` kommer därifrån.
+`tools/MasugnTest.cpp` spelar alla ljud (både A och B) genom motorn, letar efter fel och mäter volymen. Volymerna i `src/Presets.h` kommer därifrån. `--bench` mäter hur tungt det är med åtta toner.

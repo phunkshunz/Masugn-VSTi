@@ -8,6 +8,8 @@ int main (int argc, char** argv)
     MasugnProcessor proc;
     proc.prepareToPlay (48000.0, 256);
     if (argc > 2) proc.loadPreset (juce::String (argv[2]).getIntValue());
+    if (argc > 3)   // SMÄLT-läge för bilden
+        if (auto* p = proc.apvts.getParameter ("smalt")) p->setValueNotifyingHost (juce::String (argv[3]).getFloatValue());
     std::unique_ptr<juce::AudioProcessorEditor> ed (proc.createEditor());
     ed->setVisible (true);
     ed->setBounds (0, 0, ed->getWidth(), ed->getHeight());
